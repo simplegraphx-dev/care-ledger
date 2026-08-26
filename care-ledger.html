@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Care Ledger</title>
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Care Ledger">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+  :root{
+    --bg:#eef2f1;
+    --surface:#ffffff;
+    --surface-2:#f5f8f7;
+    --ink:#0f2420;
+    --ink-soft:#5c6f6a;
+    --ink-faint:#93a29d;
+    --line: rgba(15,36,32,0.09);
+    --accent:#0f766e;        /* deep clinical teal */
+    --accent-ink:#0b4a44;
+    --accent-soft:#dcf1ec;
+    --rose:#b3261e;
+    --rose-soft:#fbe2e0;
+    --amber:#a15c07;
+    --amber-soft:#faedd6;
+    --radius: 20px;
+    --radius-sm: 12px;
+    --shadow: 0 1px 2px rgba(15,36,32,0.04), 0 8px 24px -12px rgba(15,36,32,0.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    padding: 24px 16px 90px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{ max-width: 620px; margin: 0 auto; }
+
+  header{
+    display:flex; align-items:flex-start; justify-content:space-between;
+    margin-bottom: 6px; gap:10px;
+  }
+  .title-block{ display:flex; flex-direction:column; }
+  h1{
+    font-family:'Space Grotesk', sans-serif; font-weight:700;
+    font-size: 26px; margin:0; letter-spacing:-0.02em; color:var(--ink);
+  }
+  .subtitle{ font-size:12px; color:var(--ink-faint); margin-top:2px; letter-spacing:0.01em; }
+
+  .sync-badge{
+    font-size:11px; font-weight:600; color:var(--accent-ink); border:1px solid var(--accent);
+    padding:6px 12px; border-radius:999px; background:var(--accent-soft); cursor:pointer;
+    white-space:nowrap;
+  }
+
+  .pulse-divider{ width:100%; height:28px; margin: 10px 0 22px; overflow:hidden; }
+  .pulse-divider svg{ width:100%; height:100%; display:block; }
+  .pulse-divider path{
+    fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray: 300; stroke-dashoffset: 300;
+    animation: draw 1.4s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .pulse-divider path{ animation:none; stroke-dashoffset:0; }
+  }
+  @keyframes draw{ to{ stroke-dashoffset:0; } }
+
+  .tabs{
+    display:flex; gap:4px; margin-bottom:20px; background:var(--surface-2);
+    border:1px solid var(--line); border-radius: 14px; padding:4px;
+  }
+  .tab{
+    flex:1; text-align:center; padding:9px 0; font-size:13px; font-weight:600;
+    font-family:'Inter', sans-serif; border-radius: 10px;
+    color:var(--ink-soft); cursor:pointer; transition: background .15s ease, color .15s ease;
+  }
+  .tab.active{ background:var(--surface); color:var(--accent-ink); box-shadow: var(--shadow); }
+
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius: var(--radius);
+    padding:18px; margin-bottom:16px; box-shadow: var(--shadow);
+  }
+  .card h2{
+    font-family:'Space Grotesk', sans-serif; font-size:15px; font-weight:600; margin:0 0 14px;
+    color:var(--ink);
+  }
+
+  form .row{ display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  form .row > *{ flex:1; min-width: 100px; }
+  label{ font-size:11px; color:var(--ink-faint); display:block; margin-bottom:5px; font-weight:600; letter-spacing:0.02em;}
+  input[type=text], input[type=date], input[type=number], select{
+    width:100%; font-family:'Inter', sans-serif; font-size:14px;
+    padding:10px 11px; border:1px solid var(--line); border-radius: var(--radius-sm);
+    background:var(--surface-2); color:var(--ink); transition: border-color .15s ease, background .15s ease;
+  }
+  input:focus, select:focus{ outline:none; border-color: var(--accent); background:var(--surface); }
+
+  .status-toggle{ display:flex; gap:8px; }
+  .status-toggle button{
+    flex:1; padding:9px 0; border-radius: var(--radius-sm); border:1px solid var(--line);
+    background:var(--surface-2); font-family:'Inter',sans-serif; font-size:13px; font-weight:600; cursor:pointer;
+    color:var(--ink-soft); transition: all .15s ease;
+  }
+  .status-toggle button.sel-active{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); }
+  .status-toggle button.sel-inactive{ background:var(--rose-soft); border-color:var(--rose); color:var(--rose); }
+
+  button.primary{
+    width:100%; padding:12px 0; border:none; border-radius: var(--radius-sm);
+    background:var(--accent); color:#fff; font-family:'Inter',sans-serif;
+    font-size:13px; font-weight:600; letter-spacing:0.01em; cursor:pointer;
+    transition: background .15s ease, transform .05s ease;
+  }
+  button.primary:hover{ background: var(--accent-ink); }
+  button.primary:active{ transform: translateY(1px); }
+
+  .section-label{
+    font-size:11px; text-transform:uppercase; font-weight:700; letter-spacing:0.08em; color:var(--ink-faint);
+    margin: 24px 2px 10px; display:flex; align-items:center; gap:8px;
+  }
+
+  .entry{
+    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius: var(--radius-sm); padding:14px 16px; margin-bottom:10px;
+    display:flex; justify-content:space-between; gap:10px; align-items:flex-start;
+    box-shadow: var(--shadow);
+  }
+  .entry.is-inactive{ border-left-color: var(--ink-faint); }
+  .entry-main{ flex:1; min-width:0; }
+  .entry-title{ font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:15px; margin-bottom:5px; word-break:break-word; color:var(--ink);}
+  .entry-meta{ font-size:12.5px; color:var(--ink-soft); display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-family:'JetBrains Mono', monospace; }
+  .pill{
+    display:inline-block; padding:2px 10px; border-radius:999px; font-size:11px; font-weight:600;
+    letter-spacing:0.02em; font-family:'Inter', sans-serif;
+  }
+  .pill.date{ background:var(--amber-soft); color:var(--amber); }
+
+  .entry-actions{ display:flex; gap:2px; flex-shrink:0; }
+  .icon-btn{
+    background:none; border:none; cursor:pointer; font-size:15px; color:var(--ink-faint);
+    padding:5px; line-height:1; border-radius:8px; transition: background .15s ease, color .15s ease;
+  }
+  .icon-btn:hover{ color:var(--ink); background: var(--surface-2); }
+
+  .empty{
+    text-align:center; color: var(--ink-faint); font-size:13px; padding:26px 10px;
+    border:1px dashed var(--line); border-radius: var(--radius); background: var(--surface-2);
+  }
+
+  .modal-bg{
+    display:none; position:fixed; inset:0; background:rgba(15,36,32,0.45);
+    align-items:center; justify-content:center; padding:20px; z-index:50; backdrop-filter: blur(2px);
+  }
+  .modal-bg.open{ display:flex; }
+  .modal{
+    background:var(--surface); border-radius: var(--radius); padding:22px; max-width:340px; width:100%;
+    box-shadow: var(--shadow);
+  }
+  .modal h3{ font-family:'Space Grotesk',sans-serif; margin-top:0; font-size:17px; }
+  .modal p{ font-size:13px; color:var(--ink-soft); line-height:1.5; }
+  .modal input{ margin-bottom:14px; }
+  .modal-actions{ display:flex; gap:8px; margin-top:6px; }
+  .modal-actions button{ flex:1; }
+  button.secondary{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--ink);
+    padding:11px 0; border-radius: var(--radius-sm); font-family:'Inter',sans-serif; font-size:13px; font-weight:600; cursor:pointer;
+  }
+
+  .status-line{ text-align:center; font-size:11px; color: var(--ink-faint); margin-top:18px; }
+
+  .toolbar{ display:flex; gap:8px; margin-bottom:16px; }
+  .toolbar button{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:9px 0; border-radius: var(--radius-sm); border:1px solid var(--line);
+    background:var(--surface); color:var(--ink-soft); font-family:'Inter',sans-serif;
+    font-size:12.5px; font-weight:600; cursor:pointer; box-shadow: var(--shadow);
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .toolbar button:hover{ color:var(--accent-ink); border-color:var(--accent); }
+
+  .print-only{ display:none; }
+
+  @media print{
+    body{ background:#fff; padding:0; }
+    .no-print{ display:none !important; }
+    .panel{ display:block !important; }
+    .print-only{ display:block; }
+    .print-header{
+      font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:22px;
+      margin-bottom:2px;
+    }
+    .print-sub{ font-size:12px; color:#555; margin-bottom:18px; }
+    .print-section-title{
+      font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:15px;
+      margin: 18px 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px;
+    }
+    .entry{ box-shadow:none; border:1px solid #ddd; break-inside: avoid; }
+    .tabs{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="title-block">
+      <h1>Care Ledger</h1>
+      <div class="subtitle">Synced with your Google account</div>
+    </div>
+    <div class="sync-badge no-print" id="syncBadge" onclick="handleAuthBadgeClick()">Sign in with Google</div>
+  </header>
+  <div class="pulse-divider no-print" aria-hidden="true">
+    <svg viewBox="0 0 400 28" preserveAspectRatio="none">
+      <path d="M0,14 L130,14 L145,3 L160,25 L175,14 L195,14 L205,20 L215,14 L400,14"/>
+    </svg>
+  </div>
+
+  <div class="print-only">
+    <div class="print-header">Care Ledger</div>
+    <div class="print-sub" id="printDate"></div>
+  </div>
+
+  <div class="toolbar no-print">
+    <button onclick="exportExcel()">⬇ Export to Excel</button>
+    <button onclick="printLedger()">🖨 Print</button>
+  </div>
+
+  <div class="tabs no-print">
+    <div class="tab active" data-tab="procedures" onclick="switchTab('procedures')">Procedures</div>
+    <div class="tab" data-tab="medications" onclick="switchTab('medications')">Medications</div>
+  </div>
+
+  <!-- PROCEDURES -->
+  <div class="panel active" id="panel-procedures">
+    <div class="card no-print">
+      <h2>Add procedure</h2>
+      <form id="procForm">
+        <div class="row">
+          <div>
+            <label>Type</label>
+            <input type="text" id="procType" placeholder="e.g. Colonoscopy" required>
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" id="procDate" required>
+          </div>
+        </div>
+        <button type="submit" class="primary">Add procedure</button>
+      </form>
+    </div>
+    <div class="print-section-title print-only">Procedures</div>
+    <div id="procList"></div>
+  </div>
+
+  <!-- MEDICATIONS -->
+  <div class="panel" id="panel-medications">
+    <div class="card no-print">
+      <h2>Add medication</h2>
+      <form id="medForm">
+        <div class="row">
+          <div>
+            <label>Type / name</label>
+            <input type="text" id="medType" placeholder="e.g. Lisinopril" required>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Dose</label>
+            <input type="text" id="medDose" placeholder="e.g. 10mg" required>
+          </div>
+        </div>
+        <div class="row">
+          <div style="flex:0 0 70px; min-width:70px;">
+            <label>Times</label>
+            <input type="number" id="medTimes" min="1" value="1" required>
+          </div>
+          <div>
+            <label>Per</label>
+            <select id="medUnit" onchange="updateIntervalVisibility()">
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+            </select>
+          </div>
+          <div id="medIntervalWrap">
+            <label id="medIntervalLabel">Every</label>
+            <input type="number" id="medInterval" min="1" value="1">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Status</label>
+            <div class="status-toggle">
+              <button type="button" id="medStatusActiveBtn" class="sel-active" onclick="setMedFormStatus('active')">Active</button>
+              <button type="button" id="medStatusInactiveBtn" onclick="setMedFormStatus('inactive')">Inactive</button>
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="primary">Add medication</button>
+      </form>
+    </div>
+
+    <div class="print-section-title print-only">Medications</div>
+    <div class="section-label">Active</div>
+    <div id="medListActive"></div>
+    <div class="section-label">Inactive / past</div>
+    <div id="medListInactive"></div>
+  </div>
+
+  <div class="status-line no-print" id="statusLine">Not synced — saving to this device only</div>
+</div>
+
+<!-- Google account modal -->
+<div class="modal-bg no-print" id="accountModalBg">
+  <div class="modal">
+    <h3>Google account</h3>
+    <p id="accountModalEmail">Signed in</p>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeAccountModal()">Close</button>
+      <button class="primary" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit procedure modal -->
+<div class="modal-bg no-print" id="editProcModalBg">
+  <div class="modal">
+    <h3>Edit procedure</h3>
+    <label>Type</label>
+    <input type="text" id="editProcType">
+    <label>Date</label>
+    <input type="date" id="editProcDate">
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeEditProcModal()">Cancel</button>
+      <button class="primary" onclick="saveEditProcedure()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit medication modal -->
+<div class="modal-bg no-print" id="editMedModalBg">
+  <div class="modal">
+    <h3>Edit medication</h3>
+    <label>Type / name</label>
+    <input type="text" id="editMedType">
+    <label>Dose</label>
+    <input type="text" id="editMedDose">
+    <div class="row" style="margin-bottom:14px;">
+      <div style="flex:0 0 70px; min-width:70px;">
+        <label>Times</label>
+        <input type="number" id="editMedTimes" min="1">
+      </div>
+      <div>
+        <label>Per</label>
+        <select id="editMedUnit" onchange="updateEditIntervalVisibility()">
+          <option value="day">Day</option>
+          <option value="week">Week</option>
+          <option value="month">Month</option>
+        </select>
+      </div>
+      <div id="editMedIntervalWrap">
+        <label id="editMedIntervalLabel">Every</label>
+        <input type="number" id="editMedInterval" min="1">
+      </div>
+    </div>
+    <label>Status</label>
+    <div class="status-toggle" style="margin-bottom:16px;">
+      <button type="button" id="editMedStatusActiveBtn" onclick="setEditMedStatus('active')">Active</button>
+      <button type="button" id="editMedStatusInactiveBtn" onclick="setEditMedStatus('inactive')">Inactive</button>
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeEditMedModal()">Cancel</button>
+      <button class="primary" onclick="saveEditMedication()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Google OAuth config ----------
+// Replace with your own Google Cloud OAuth Client ID (see My Garage for the pattern).
+// Authorized JavaScript origins must include the URL this page is hosted at.
+const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_OAUTH_CLIENT_ID_HERE";
+const GOOGLE_SCOPES = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email";
+const DRIVE_FILENAME = "care-ledger-data.json";
+
+let tokenClient = null;
+let accessToken = null;
+let driveFileId = null;
+let userEmail = null;
+let isSignedIn = false;
+
+let procedures = [];
+let medications = [];
+let medFormStatus = 'active';
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+// ---------- Storage: local (offline fallback) ----------
+function loadLocal(){
+  procedures = JSON.parse(localStorage.getItem('careLedgerProcedures') || '[]');
+  medications = JSON.parse(localStorage.getItem('careLedgerMedications') || '[]');
+}
+function saveLocal(){
+  localStorage.setItem('careLedgerProcedures', JSON.stringify(procedures));
+  localStorage.setItem('careLedgerMedications', JSON.stringify(medications));
+}
+
+// ---------- Google sign-in ----------
+function gisLoaded(){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GOOGLE_SCOPES,
+    callback: handleTokenResponse
+  });
+  // If we signed in before on this device, try to reconnect without a prompt.
+  if (localStorage.getItem('careLedgerGoogleSignedIn') === '1'){
+    tokenClient.requestAccessToken({ prompt: '' });
+  }
+}
+
+function signIn(){
+  if (!tokenClient){
+    alert('Google sign-in is still loading — try again in a moment.');
+    return;
+  }
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function signOut(){
+  if (accessToken){
+    google.accounts.oauth2.revoke(accessToken, () => {});
+  }
+  accessToken = null;
+  isSignedIn = false;
+  userEmail = null;
+  driveFileId = null;
+  localStorage.removeItem('careLedgerGoogleSignedIn');
+  updateStatusLine();
+  closeAccountModal();
+}
+
+function handleTokenResponse(resp){
+  if (resp.error){
+    console.warn('Google auth error', resp);
+    updateStatusLine(isSignedIn ? 'reconnect needed — tap to sign in' : null);
+    return;
+  }
+  accessToken = resp.access_token;
+  isSignedIn = true;
+  localStorage.setItem('careLedgerGoogleSignedIn', '1');
+  fetchUserInfo();
+  loadFromDrive();
+}
+
+async function fetchUserInfo(){
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if (res.ok){
+      const data = await res.json();
+      userEmail = data.email;
+      updateStatusLine();
+    }
+  } catch(e){ console.warn(e); }
+}
+
+function handleAuthBadgeClick(){
+  if (isSignedIn){
+    openAccountModal();
+  } else {
+    signIn();
+  }
+}
+
+function openAccountModal(){
+  document.getElementById('accountModalEmail').textContent = userEmail ? 'Signed in as ' + userEmail : 'Signed in';
+  document.getElementById('accountModalBg').classList.add('open');
+}
+function closeAccountModal(){
+  document.getElementById('accountModalBg').classList.remove('open');
+}
+
+// ---------- Storage: Google Drive (appDataFolder) ----------
+async function driveRequest(url, options={}){
+  options.headers = Object.assign({}, options.headers, { Authorization: 'Bearer ' + accessToken });
+  return fetch(url, options);
+}
+
+async function findDriveFile(){
+  const res = await driveRequest(
+    "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D'" + DRIVE_FILENAME + "'&fields=files(id,name)"
+  );
+  const data = await res.json();
+  driveFileId = (data.files && data.files.length) ? data.files[0].id : null;
+  return driveFileId;
+}
+
+async function loadFromDrive(){
+  updateStatusLine('syncing…');
+  try {
+    const fileId = await findDriveFile();
+    if (fileId){
+      const res = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+      if (res.ok){
+        const data = await res.json();
+        procedures = data.procedures || [];
+        medications = data.medications || [];
+        saveLocal();
+        renderAll();
+      }
+    } else {
+      // Nothing in Drive yet — push whatever's on this device to create it.
+      await saveToDrive();
+    }
+    updateStatusLine();
+  } catch(e){
+    console.error(e);
+    updateStatusLine('sync error — try signing in again');
+  }
+}
+
+async function saveToDrive(){
+  if (!isSignedIn || !accessToken) return;
+  const payload = JSON.stringify({ procedures, medications, updatedAt: Date.now() });
+  try {
+    if (!driveFileId){
+      await findDriveFile();
+    }
+    if (driveFileId){
+      await driveRequest(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload
+      });
+    } else {
+      const metadata = { name: DRIVE_FILENAME, parents: ['appDataFolder'] };
+      const boundary = '-------careledgerboundary';
+      const body =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+        `--${boundary}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${boundary}--`;
+      const res = await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body
+      });
+      const data = await res.json();
+      driveFileId = data.id;
+    }
+    updateStatusLine();
+  } catch(e){
+    console.error(e);
+    updateStatusLine('sync error');
+  }
+}
+
+// Called after every add/edit/delete/toggle
+function pushRemote(){
+  saveLocal();
+  if (isSignedIn){
+    saveToDrive();
+  }
+}
+
+function updateStatusLine(msg){
+  const badge = document.getElementById('syncBadge');
+  const line = document.getElementById('statusLine');
+  if (isSignedIn){
+    badge.textContent = userEmail ? '✓ ' + userEmail : '✓ Signed in';
+    line.textContent = msg || ('Synced with Google Drive' + (userEmail ? ' · ' + userEmail : ''));
+  } else {
+    badge.textContent = 'Sign in with Google';
+    line.textContent = msg || 'Not signed in — saving to this device only';
+  }
+}
+
+// ---------- Tabs ----------
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.getElementById('panel-procedures').classList.toggle('active', name === 'procedures');
+  document.getElementById('panel-medications').classList.toggle('active', name === 'medications');
+}
+
+// ---------- Procedures ----------
+document.getElementById('procForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const type = document.getElementById('procType').value.trim();
+  const date = document.getElementById('procDate').value;
+  if (!type || !date) return;
+  procedures.push({ id: uid(), type, date });
+  pushRemote();
+  renderProcedures();
+  this.reset();
+});
+
+function fmtDate(d){
+  if (!d) return '';
+  const [y,m,day] = d.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[parseInt(m,10)-1] + ' ' + parseInt(day,10) + ', ' + y;
+}
+
+function renderProcedures(){
+  const list = document.getElementById('procList');
+  if (procedures.length === 0){
+    list.innerHTML = '<div class="empty">No procedures logged yet.</div>';
+    return;
+  }
+  const sorted = [...procedures].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  list.innerHTML = sorted.map(p => `
+    <div class="entry">
+      <div class="entry-main">
+        <div class="entry-title">${escapeHtml(p.type)}</div>
+        <div class="entry-meta"><span class="pill date">${fmtDate(p.date)}</span></div>
+      </div>
+      <div class="entry-actions">
+        <button class="icon-btn" onclick="openEditProcedure('${p.id}')" title="Edit">✎</button>
+        <button class="icon-btn" onclick="deleteProcedure('${p.id}')" title="Delete">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function deleteProcedure(id){
+  procedures = procedures.filter(p => p.id !== id);
+  pushRemote();
+  renderProcedures();
+}
+
+let editingProcId = null;
+function openEditProcedure(id){
+  const p = procedures.find(x => x.id === id);
+  if (!p) return;
+  editingProcId = id;
+  document.getElementById('editProcType').value = p.type;
+  document.getElementById('editProcDate').value = p.date;
+  document.getElementById('editProcModalBg').classList.add('open');
+}
+function closeEditProcModal(){
+  document.getElementById('editProcModalBg').classList.remove('open');
+  editingProcId = null;
+}
+function saveEditProcedure(){
+  const p = procedures.find(x => x.id === editingProcId);
+  if (!p) return;
+  const type = document.getElementById('editProcType').value.trim();
+  const date = document.getElementById('editProcDate').value;
+  if (!type || !date) return;
+  p.type = type;
+  p.date = date;
+  pushRemote();
+  renderProcedures();
+  closeEditProcModal();
+}
+
+// ---------- Medications ----------
+function setMedFormStatus(status){
+  medFormStatus = status;
+  document.getElementById('medStatusActiveBtn').className = status === 'active' ? 'sel-active' : '';
+  document.getElementById('medStatusInactiveBtn').className = status === 'inactive' ? 'sel-inactive' : '';
+}
+
+function updateIntervalVisibility(){
+  const unit = document.getElementById('medUnit').value;
+  const wrap = document.getElementById('medIntervalWrap');
+  const label = document.getElementById('medIntervalLabel');
+  if (unit === 'month'){
+    wrap.style.display = 'none';
+  } else {
+    wrap.style.display = '';
+    label.textContent = unit === 'day' ? 'Every (days)' : 'Every (weeks)';
+  }
+}
+
+function formatFrequency(f){
+  const times = f.times || 1;
+  const interval = f.interval || 1;
+  const unit = f.unit || 'day';
+  const timesLabel = times === 1 ? '1x' : times + 'x';
+
+  if (unit === 'month'){
+    return timesLabel + ' monthly';
+  }
+  const unitWord = unit === 'day' ? 'day' : 'week';
+  if (interval === 1){
+    return timesLabel + ' ' + (unit === 'day' ? 'daily' : 'weekly');
+  }
+  if (unit === 'day' && interval === 2){
+    return timesLabel + ' every other day';
+  }
+  return timesLabel + ' every ' + interval + ' ' + unitWord + 's';
+}
+
+document.getElementById('medForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const type = document.getElementById('medType').value.trim();
+  const dose = document.getElementById('medDose').value.trim();
+  const times = parseInt(document.getElementById('medTimes').value, 10) || 1;
+  const unit = document.getElementById('medUnit').value;
+  const interval = unit === 'month' ? 1 : (parseInt(document.getElementById('medInterval').value, 10) || 1);
+  if (!type || !dose) return;
+  medications.push({
+    id: uid(), type, dose,
+    frequency: { times, unit, interval },
+    status: medFormStatus, addedAt: Date.now()
+  });
+  pushRemote();
+  renderMedications();
+  this.reset();
+  document.getElementById('medTimes').value = 1;
+  document.getElementById('medInterval').value = 1;
+  document.getElementById('medUnit').value = 'day';
+  updateIntervalVisibility();
+  setMedFormStatus('active');
+});
+
+function renderMedications(){
+  const activeList = medications.filter(m => m.status === 'active').sort((a,b) => b.addedAt - a.addedAt);
+  const inactiveList = medications.filter(m => m.status !== 'active').sort((a,b) => b.addedAt - a.addedAt);
+
+  const activeEl = document.getElementById('medListActive');
+  const inactiveEl = document.getElementById('medListInactive');
+
+  activeEl.innerHTML = activeList.length ? activeList.map(medEntry).join('') : '<div class="empty">No active medications.</div>';
+  inactiveEl.innerHTML = inactiveList.length ? inactiveList.map(medEntry).join('') : '<div class="empty">No past medications.</div>';
+}
+
+function medEntry(m){
+  const inactive = m.status !== 'active';
+  return `
+    <div class="entry ${inactive ? 'is-inactive' : ''}">
+      <div class="entry-main">
+        <div class="entry-title">${escapeHtml(m.type)}</div>
+        <div class="entry-meta">
+          <span>${escapeHtml(m.dose)}</span>
+          <span>·</span>
+          <span>${escapeHtml(formatFrequency(m.frequency || {}))}</span>
+        </div>
+      </div>
+      <div class="entry-actions">
+        <button class="icon-btn" onclick="toggleMedStatus('${m.id}')" title="Toggle active/inactive">${m.status === 'active' ? '⏸' : '▶'}</button>
+        <button class="icon-btn" onclick="openEditMedication('${m.id}')" title="Edit">✎</button>
+        <button class="icon-btn" onclick="deleteMedication('${m.id}')" title="Delete">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+function toggleMedStatus(id){
+  const m = medications.find(x => x.id === id);
+  if (!m) return;
+  m.status = m.status === 'active' ? 'inactive' : 'active';
+  pushRemote();
+  renderMedications();
+}
+
+function deleteMedication(id){
+  medications = medications.filter(m => m.id !== id);
+  pushRemote();
+  renderMedications();
+}
+
+let editingMedId = null;
+let editMedFormStatus = 'active';
+function setEditMedStatus(status){
+  editMedFormStatus = status;
+  document.getElementById('editMedStatusActiveBtn').className = status === 'active' ? 'sel-active' : '';
+  document.getElementById('editMedStatusInactiveBtn').className = status === 'inactive' ? 'sel-inactive' : '';
+}
+function updateEditIntervalVisibility(){
+  const unit = document.getElementById('editMedUnit').value;
+  const wrap = document.getElementById('editMedIntervalWrap');
+  const label = document.getElementById('editMedIntervalLabel');
+  if (unit === 'month'){
+    wrap.style.display = 'none';
+  } else {
+    wrap.style.display = '';
+    label.textContent = unit === 'day' ? 'Every (days)' : 'Every (weeks)';
+  }
+}
+function openEditMedication(id){
+  const m = medications.find(x => x.id === id);
+  if (!m) return;
+  editingMedId = id;
+  document.getElementById('editMedType').value = m.type;
+  document.getElementById('editMedDose').value = m.dose;
+  const f = m.frequency || { times:1, unit:'day', interval:1 };
+  document.getElementById('editMedTimes').value = f.times || 1;
+  document.getElementById('editMedUnit').value = f.unit || 'day';
+  document.getElementById('editMedInterval').value = f.interval || 1;
+  updateEditIntervalVisibility();
+  setEditMedStatus(m.status === 'active' ? 'active' : 'inactive');
+  document.getElementById('editMedModalBg').classList.add('open');
+}
+function closeEditMedModal(){
+  document.getElementById('editMedModalBg').classList.remove('open');
+  editingMedId = null;
+}
+function saveEditMedication(){
+  const m = medications.find(x => x.id === editingMedId);
+  if (!m) return;
+  const type = document.getElementById('editMedType').value.trim();
+  const dose = document.getElementById('editMedDose').value.trim();
+  const times = parseInt(document.getElementById('editMedTimes').value, 10) || 1;
+  const unit = document.getElementById('editMedUnit').value;
+  const interval = unit === 'month' ? 1 : (parseInt(document.getElementById('editMedInterval').value, 10) || 1);
+  if (!type || !dose) return;
+  m.type = type;
+  m.dose = dose;
+  m.frequency = { times, unit, interval };
+  m.status = editMedFormStatus;
+  pushRemote();
+  renderMedications();
+  closeEditMedModal();
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function renderAll(){
+  renderProcedures();
+  renderMedications();
+}
+
+// ---------- Export & print ----------
+function exportExcel(){
+  if (typeof XLSX === 'undefined'){
+    alert('Excel export library did not load — check your connection and try again.');
+    return;
+  }
+  const procRows = [...procedures]
+    .sort((a,b) => (b.date || '').localeCompare(a.date || ''))
+    .map(p => ({ Type: p.type, Date: fmtDate(p.date) }));
+
+  const medRows = [...medications]
+    .sort((a,b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1))
+    .map(m => ({
+      Type: m.type,
+      Dose: m.dose,
+      Frequency: formatFrequency(m.frequency || {}),
+      Status: m.status === 'active' ? 'Active' : 'Inactive'
+    }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(procRows.length ? procRows : [{Type:'', Date:''}]), 'Procedures');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(medRows.length ? medRows : [{Type:'', Dose:'', Frequency:'', Status:''}]), 'Medications');
+
+  const stamp = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `care-ledger-${stamp}.xlsx`);
+}
+
+function printLedger(){
+  document.getElementById('printDate').textContent =
+    'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
+  window.print();
+}
+
+// ---------- Init ----------
+loadLocal();
+renderAll();
+updateStatusLine();
+
+document.getElementById('procDate').valueAsDate = new Date();
+updateIntervalVisibility();
+</script>
+</body>
+</html>
