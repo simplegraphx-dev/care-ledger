@@ -13,7 +13,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
@@ -390,18 +392,34 @@
 </div>
 
 <script>
-// ---------- Google OAuth config ----------
-// Replace with your own Google Cloud OAuth Client ID (see My Garage for the pattern).
-// Authorized JavaScript origins must include the URL this page is hosted at.
-const GOOGLE_CLIENT_ID = "801632723494-e7tugoc32a03dt43g3lv5dji2f7ipn9f.apps.googleusercontent.com";
-const GOOGLE_SCOPES = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email";
-const DRIVE_FILENAME = "care-ledger-data.json";
+// ---------- Firebase config ----------
+// Create a Firebase project at console.firebase.google.com, then:
+//   1. Build > Authentication > Sign-in method > enable Google
+//   2. Build > Firestore Database > Create database
+//   3. Project settings > General > Your apps > Add app (Web) > copy the config below
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
 
-let tokenClient = null;
-let accessToken = null;
-let driveFileId = null;
-let userEmail = null;
+let auth = null, db = null;
+let firebaseReady = false;
+try {
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+  firebaseReady = true;
+} catch (e) {
+  console.warn("Firebase not configured yet, using local storage only.", e);
+}
+
+let currentUser = null;
 let isSignedIn = false;
+let unsubDoc = null;
 
 let procedures = [];
 let medications = [];
@@ -419,64 +437,22 @@ function saveLocal(){
   localStorage.setItem('careLedgerMedications', JSON.stringify(medications));
 }
 
-// ---------- Google sign-in ----------
-function gisLoaded(){
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: GOOGLE_SCOPES,
-    callback: handleTokenResponse
-  });
-  // If we signed in before on this device, try to reconnect without a prompt.
-  if (localStorage.getItem('careLedgerGoogleSignedIn') === '1'){
-    tokenClient.requestAccessToken({ prompt: '' });
-  }
-}
-
+// ---------- Google sign-in via Firebase Auth ----------
 function signIn(){
-  if (!tokenClient){
-    alert('Google sign-in is still loading — try again in a moment.');
+  if (!firebaseReady){
+    alert('Firebase isn\'t configured yet — add your Firebase project config near the top of the script.');
     return;
   }
-  tokenClient.requestAccessToken({ prompt: 'consent' });
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(err => {
+    console.error(err);
+    updateStatusLine('sign-in failed — try again');
+  });
 }
 
 function signOut(){
-  if (accessToken){
-    google.accounts.oauth2.revoke(accessToken, () => {});
-  }
-  accessToken = null;
-  isSignedIn = false;
-  userEmail = null;
-  driveFileId = null;
-  localStorage.removeItem('careLedgerGoogleSignedIn');
-  updateStatusLine();
+  if (auth) auth.signOut();
   closeAccountModal();
-}
-
-function handleTokenResponse(resp){
-  if (resp.error){
-    console.warn('Google auth error', resp);
-    updateStatusLine(isSignedIn ? 'reconnect needed — tap to sign in' : null);
-    return;
-  }
-  accessToken = resp.access_token;
-  isSignedIn = true;
-  localStorage.setItem('careLedgerGoogleSignedIn', '1');
-  fetchUserInfo();
-  loadFromDrive();
-}
-
-async function fetchUserInfo(){
-  try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + accessToken }
-    });
-    if (res.ok){
-      const data = await res.json();
-      userEmail = data.email;
-      updateStatusLine();
-    }
-  } catch(e){ console.warn(e); }
 }
 
 function handleAuthBadgeClick(){
@@ -488,100 +464,68 @@ function handleAuthBadgeClick(){
 }
 
 function openAccountModal(){
-  document.getElementById('accountModalEmail').textContent = userEmail ? 'Signed in as ' + userEmail : 'Signed in';
+  document.getElementById('accountModalEmail').textContent = currentUser ? 'Signed in as ' + currentUser.email : 'Signed in';
   document.getElementById('accountModalBg').classList.add('open');
 }
 function closeAccountModal(){
   document.getElementById('accountModalBg').classList.remove('open');
 }
 
-// ---------- Storage: Google Drive (appDataFolder) ----------
-async function driveRequest(url, options={}){
-  options.headers = Object.assign({}, options.headers, { Authorization: 'Bearer ' + accessToken });
-  return fetch(url, options);
+if (firebaseReady){
+  auth.onAuthStateChanged(user => {
+    if (unsubDoc){ unsubDoc(); unsubDoc = null; }
+    if (user){
+      currentUser = user;
+      isSignedIn = true;
+      attachUserDoc(user.uid);
+    } else {
+      currentUser = null;
+      isSignedIn = false;
+      updateStatusLine();
+    }
+  });
 }
 
-async function findDriveFile(){
-  const res = await driveRequest(
-    "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D'" + DRIVE_FILENAME + "'&fields=files(id,name)"
-  );
-  const data = await res.json();
-  driveFileId = (data.files && data.files.length) ? data.files[0].id : null;
-  return driveFileId;
-}
-
-async function loadFromDrive(){
+// ---------- Storage: Firestore, keyed by the signed-in user's uid ----------
+function attachUserDoc(userId){
   updateStatusLine('syncing…');
-  try {
-    const fileId = await findDriveFile();
-    if (fileId){
-      const res = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
-      if (res.ok){
-        const data = await res.json();
-        procedures = data.procedures || [];
-        medications = data.medications || [];
-        saveLocal();
-        renderAll();
-      }
-    } else {
-      // Nothing in Drive yet — push whatever's on this device to create it.
-      await saveToDrive();
+  const ref = db.collection('careLedgerUsers').doc(userId);
+  ref.get().then(snap => {
+    if (!snap.exists){
+      ref.set({ procedures, medications, updatedAt: Date.now() });
+    }
+  });
+  unsubDoc = ref.onSnapshot(snap => {
+    if (snap.exists){
+      const data = snap.data();
+      procedures = data.procedures || [];
+      medications = data.medications || [];
+      saveLocal();
+      renderAll();
     }
     updateStatusLine();
-  } catch(e){
-    console.error(e);
-    updateStatusLine('sync error — try signing in again');
-  }
-}
-
-async function saveToDrive(){
-  if (!isSignedIn || !accessToken) return;
-  const payload = JSON.stringify({ procedures, medications, updatedAt: Date.now() });
-  try {
-    if (!driveFileId){
-      await findDriveFile();
-    }
-    if (driveFileId){
-      await driveRequest(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload
-      });
-    } else {
-      const metadata = { name: DRIVE_FILENAME, parents: ['appDataFolder'] };
-      const boundary = '-------careledgerboundary';
-      const body =
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-        `--${boundary}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${boundary}--`;
-      const res = await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-        body
-      });
-      const data = await res.json();
-      driveFileId = data.id;
-    }
-    updateStatusLine();
-  } catch(e){
-    console.error(e);
-    updateStatusLine('sync error');
-  }
+  }, err => {
+    console.error(err);
+    updateStatusLine('sync error — check Firestore rules');
+  });
 }
 
 // Called after every add/edit/delete/toggle
 function pushRemote(){
   saveLocal();
-  if (isSignedIn){
-    saveToDrive();
+  if (isSignedIn && currentUser){
+    db.collection('careLedgerUsers').doc(currentUser.uid)
+      .set({ procedures, medications, updatedAt: Date.now() })
+      .catch(err => { console.error(err); updateStatusLine('sync error'); });
   }
 }
 
 function updateStatusLine(msg){
   const badge = document.getElementById('syncBadge');
   const line = document.getElementById('statusLine');
-  if (isSignedIn){
-    badge.textContent = userEmail ? '✓ ' + userEmail : '✓ Signed in';
-    line.textContent = msg || ('Synced with Google Drive' + (userEmail ? ' · ' + userEmail : ''));
+  if (isSignedIn && currentUser){
+    badge.textContent = '✓ ' + currentUser.email;
+    line.textContent = msg || ('Synced with Google · ' + currentUser.email);
   } else {
     badge.textContent = 'Sign in with Google';
     line.textContent = msg || 'Not signed in — saving to this device only';
