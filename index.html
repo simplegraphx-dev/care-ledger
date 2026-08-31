@@ -220,7 +220,7 @@
   <header>
     <div class="title-block">
       <h1>Care Ledger</h1>
-      <div class="subtitle">Procedures &amp; medications, in one place</div>
+      <div class="subtitle" id="subtitle">Procedures &amp; medications, in one place</div>
     </div>
     <div class="sync-badge no-print" id="syncBadge" onclick="openSyncModal()">no sync code</div>
   </header>
@@ -414,7 +414,7 @@ try {
   console.warn("Firebase not configured yet, using local storage only.", e);
 }
 
-let syncCode = localStorage.getItem('careLedgerSyncCode') || '';
+let syncCode = (localStorage.getItem('careLedgerSyncCode') || '').trim().toLowerCase();
 let procedures = [];
 let medications = [];
 let unsubDoc = null;
@@ -476,12 +476,15 @@ function pushRemote(){
 function updateStatusLine(msg){
   const badge = document.getElementById('syncBadge');
   const line = document.getElementById('statusLine');
+  const subtitle = document.getElementById('subtitle');
   if (syncCode){
     badge.textContent = 'code: ' + syncCode;
     line.textContent = msg || (firebaseReady ? 'synced via "' + syncCode + '"' : 'sync unavailable — local only');
+    if (subtitle) subtitle.textContent = 'Synced across devices via "' + syncCode + '"';
   } else {
     badge.textContent = 'no sync code';
     line.textContent = 'Not synced — saving to this device only';
+    if (subtitle) subtitle.textContent = 'Procedures & medications, in one place';
   }
 }
 
@@ -493,7 +496,7 @@ function closeSyncModal(){
   document.getElementById('syncModalBg').classList.remove('open');
 }
 function applySyncCode(){
-  const val = document.getElementById('syncCodeInput').value.trim();
+  const val = document.getElementById('syncCodeInput').value.trim().toLowerCase();
   syncCode = val;
   localStorage.setItem('careLedgerSyncCode', syncCode);
   closeSyncModal();
