@@ -184,6 +184,24 @@
 
   .status-line{ text-align:center; font-size:11px; color: var(--ink-faint); margin-top:18px; }
 
+  .auth-gate{
+    position:fixed; inset:0; z-index:100; background: var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .auth-gate.hidden{ display:none; }
+  .auth-gate-card{
+    max-width:340px; width:100%; background:var(--surface); border-radius: var(--radius);
+    padding:28px 24px; box-shadow: var(--shadow); text-align:center;
+  }
+  .auth-gate-title{
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:24px; margin-bottom:10px;
+  }
+  .auth-gate-sub{ font-size:13px; color:var(--ink-soft); line-height:1.5; margin-bottom:20px; }
+  .auth-gate-error{
+    margin-top:14px; font-size:11.5px; color:var(--rose); line-height:1.4;
+    word-break: break-word; font-family:'JetBrains Mono', monospace;
+  }
+
   .toolbar{ display:flex; gap:8px; margin-bottom:16px; }
   .toolbar button{
     flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
@@ -216,6 +234,17 @@
 </style>
 </head>
 <body>
+<!-- Sign-in gate: shown automatically on load until signed in -->
+<div class="auth-gate no-print" id="authGate">
+  <div class="auth-gate-card">
+    <div class="auth-gate-title">Care Ledger</div>
+    <div class="auth-gate-sub">Sign in with Google to sync your procedures and medications across all your devices.</div>
+    <button class="primary" onclick="signIn()">Continue with Google</button>
+    <button class="secondary" style="margin-top:10px;" onclick="skipAuthGate()">Skip for now — use this device only</button>
+    <div class="auth-gate-error" id="authGateError"></div>
+  </div>
+</div>
+
 <div class="wrap">
 
   <header>
@@ -444,19 +473,42 @@ function isMobileOrStandalone(){
   return standalone || mobileUA;
 }
 
+function showAuthGateError(err){
+  const el = document.getElementById('authGateError');
+  if (!el) return;
+  el.textContent = err ? ((err.code || 'error') + ': ' + (err.message || err)) : '';
+}
+
+function showAuthGate(){
+  document.getElementById('authGate').classList.remove('hidden');
+}
+function hideAuthGate(){
+  document.getElementById('authGate').classList.add('hidden');
+}
+function skipAuthGate(){
+  sessionStorage.setItem('careLedgerSkippedSignIn', '1');
+  hideAuthGate();
+}
+
 function signIn(){
   if (!firebaseReady){
     alert('Firebase isn\'t configured yet — add your Firebase project config near the top of the script.');
     return;
   }
+  showAuthGateError(null);
   const provider = new firebase.auth.GoogleAuthProvider();
   if (isMobileOrStandalone()){
     // Popups don't work reliably on iOS Safari, and not at all in a
     // home-screen-installed standalone app — use a full-page redirect instead.
-    auth.signInWithRedirect(provider);
+    auth.signInWithRedirect(provider).catch(err => {
+      console.error(err);
+      showAuthGateError(err);
+      updateStatusLine('sign-in failed — try again');
+    });
   } else {
     auth.signInWithPopup(provider).catch(err => {
       console.error(err);
+      showAuthGateError(err);
       updateStatusLine('sign-in failed — try again');
     });
   }
@@ -471,7 +523,7 @@ function handleAuthBadgeClick(){
   if (isSignedIn){
     openAccountModal();
   } else {
-    signIn();
+    showAuthGate();
   }
 }
 
@@ -484,8 +536,15 @@ function closeAccountModal(){
 }
 
 if (firebaseReady){
+  // Show the sign-in prompt immediately, before we even know the auth state,
+  // unless the user chose "Skip for now" earlier this session.
+  if (sessionStorage.getItem('careLedgerSkippedSignIn') !== '1'){
+    showAuthGate();
+  }
+
   auth.getRedirectResult().catch(err => {
     console.error('Redirect sign-in error', err);
+    showAuthGateError(err);
     updateStatusLine('sign-in failed — try again');
   });
 
@@ -494,12 +553,21 @@ if (firebaseReady){
     if (user){
       currentUser = user;
       isSignedIn = true;
+      hideAuthGate();
       attachUserDoc(user.uid);
     } else {
       currentUser = null;
       isSignedIn = false;
       updateStatusLine();
+      if (sessionStorage.getItem('careLedgerSkippedSignIn') !== '1'){
+        showAuthGate();
+      }
     }
+  });
+} else {
+  document.addEventListener('DOMContentLoaded', () => {
+    const gate = document.getElementById('authGate');
+    if (gate) gate.classList.add('hidden');
   });
 }
 
