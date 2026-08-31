@@ -438,16 +438,28 @@ function saveLocal(){
 }
 
 // ---------- Google sign-in via Firebase Auth ----------
+function isMobileOrStandalone(){
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const mobileUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  return standalone || mobileUA;
+}
+
 function signIn(){
   if (!firebaseReady){
     alert('Firebase isn\'t configured yet — add your Firebase project config near the top of the script.');
     return;
   }
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider).catch(err => {
-    console.error(err);
-    updateStatusLine('sign-in failed — try again');
-  });
+  if (isMobileOrStandalone()){
+    // Popups don't work reliably on iOS Safari, and not at all in a
+    // home-screen-installed standalone app — use a full-page redirect instead.
+    auth.signInWithRedirect(provider);
+  } else {
+    auth.signInWithPopup(provider).catch(err => {
+      console.error(err);
+      updateStatusLine('sign-in failed — try again');
+    });
+  }
 }
 
 function signOut(){
@@ -472,6 +484,11 @@ function closeAccountModal(){
 }
 
 if (firebaseReady){
+  auth.getRedirectResult().catch(err => {
+    console.error('Redirect sign-in error', err);
+    updateStatusLine('sign-in failed — try again');
+  });
+
   auth.onAuthStateChanged(user => {
     if (unsubDoc){ unsubDoc(); unsubDoc = null; }
     if (user){
