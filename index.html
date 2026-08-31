@@ -14,7 +14,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -184,27 +183,6 @@
 
   .status-line{ text-align:center; font-size:11px; color: var(--ink-faint); margin-top:18px; }
 
-  .auth-gate{
-    position:fixed; inset:0; z-index:100; background: var(--bg);
-    display:flex; align-items:center; justify-content:center; padding:24px;
-  }
-  .auth-gate.hidden{ display:none; }
-  .auth-gate-card{
-    max-width:340px; width:100%; background:var(--surface); border-radius: var(--radius);
-    padding:28px 24px; box-shadow: var(--shadow); text-align:center;
-  }
-  .auth-gate-title{
-    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:24px; margin-bottom:10px;
-  }
-  .auth-gate-sub{ font-size:13px; color:var(--ink-soft); line-height:1.5; margin-bottom:20px; }
-  .auth-gate-error{
-    margin-top:14px; font-size:11.5px; color:var(--rose); line-height:1.4;
-    word-break: break-word; font-family:'JetBrains Mono', monospace;
-  }
-  .auth-gate-hint{
-    margin-top:14px; font-size:12px; color:var(--ink-soft); line-height:1.5;
-  }
-
   .toolbar{ display:flex; gap:8px; margin-bottom:16px; }
   .toolbar button{
     flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
@@ -237,26 +215,14 @@
 </style>
 </head>
 <body>
-<!-- Sign-in gate: shown automatically on load until signed in -->
-<div class="auth-gate no-print" id="authGate">
-  <div class="auth-gate-card">
-    <div class="auth-gate-title">Care Ledger</div>
-    <div class="auth-gate-sub">Sign in with Google to sync your procedures and medications across all your devices.</div>
-    <button class="primary" onclick="signIn()">Continue with Google</button>
-    <button class="secondary" style="margin-top:10px;" onclick="skipAuthGate()">Skip for now — use this device only</button>
-    <div class="auth-gate-hint" id="authGateHint"></div>
-    <div class="auth-gate-error" id="authGateError"></div>
-  </div>
-</div>
-
 <div class="wrap">
 
   <header>
     <div class="title-block">
       <h1>Care Ledger</h1>
-      <div class="subtitle">Synced with your Google account</div>
+      <div class="subtitle">Procedures &amp; medications, in one place</div>
     </div>
-    <div class="sync-badge no-print" id="syncBadge" onclick="handleAuthBadgeClick()">Sign in with Google</div>
+    <div class="sync-badge no-print" id="syncBadge" onclick="openSyncModal()">no sync code</div>
   </header>
   <div class="pulse-divider no-print" aria-hidden="true">
     <svg viewBox="0 0 400 28" preserveAspectRatio="none">
@@ -359,14 +325,15 @@
   <div class="status-line no-print" id="statusLine">Not synced — saving to this device only</div>
 </div>
 
-<!-- Google account modal -->
-<div class="modal-bg no-print" id="accountModalBg">
+<!-- Sync modal -->
+<div class="modal-bg no-print" id="syncModalBg">
   <div class="modal">
-    <h3>Google account</h3>
-    <p id="accountModalEmail">Signed in</p>
+    <h3>Sync across devices</h3>
+    <p>Enter a household sync code to share this ledger across your devices. Using the same code on another device links them.</p>
+    <input type="text" id="syncCodeInput" placeholder="e.g. Care">
     <div class="modal-actions">
-      <button class="secondary" onclick="closeAccountModal()">Close</button>
-      <button class="primary" onclick="signOut()">Sign out</button>
+      <button class="secondary" onclick="closeSyncModal()">Cancel</button>
+      <button class="primary" onclick="applySyncCode()">Connect</button>
     </div>
   </div>
 </div>
@@ -426,10 +393,8 @@
 
 <script>
 // ---------- Firebase config ----------
-// Create a Firebase project at console.firebase.google.com, then:
-//   1. Build > Authentication > Sign-in method > enable Google
-//   2. Build > Firestore Database > Create database
-//   3. Project settings > General > Your apps > Add app (Web) > copy the config below
+// Reusing the Vitals Ledger Firebase project — data lives in its own
+// "careLedger" collection so it never collides with Vitals Ledger's data.
 const firebaseConfig = {
   apiKey: "AIzaSyDdJLGwVEnmNw1dVMvTc9xg4YwP_eP5pV8",
   authDomain: "vitals-ledger.firebaseapp.com",
@@ -439,23 +404,20 @@ const firebaseConfig = {
   appId: "1:315048534774:web:91f9ede43beb54527682d7"
 };
 
-let auth = null, db = null;
+let db = null;
 let firebaseReady = false;
 try {
   firebase.initializeApp(firebaseConfig);
-  auth = firebase.auth();
   db = firebase.firestore();
   firebaseReady = true;
 } catch (e) {
   console.warn("Firebase not configured yet, using local storage only.", e);
 }
 
-let currentUser = null;
-let isSignedIn = false;
-let unsubDoc = null;
-
+let syncCode = localStorage.getItem('careLedgerSyncCode') || '';
 let procedures = [];
 let medications = [];
+let unsubDoc = null;
 let medFormStatus = 'active';
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -470,125 +432,19 @@ function saveLocal(){
   localStorage.setItem('careLedgerMedications', JSON.stringify(medications));
 }
 
-// ---------- Google sign-in via Firebase Auth ----------
-function isMobileOrStandalone(){
-  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  const mobileUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  return standalone || mobileUA;
+// ---------- Storage: Firestore, keyed by household sync code ----------
+function docRef(){
+  return db.collection('careLedger').doc(syncCode);
 }
 
-function isTrueStandalone(){
-  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-}
-
-function showAuthGateError(err){
-  const el = document.getElementById('authGateError');
-  if (!el) return;
-  el.textContent = err ? ((err.code || 'error') + ': ' + (err.message || err)) : '';
-}
-
-function showAuthGate(){
-  document.getElementById('authGate').classList.remove('hidden');
-  const hint = document.getElementById('authGateHint');
-  if (hint){
-    hint.textContent = isTrueStandalone()
-      ? 'First time signing in? Open this page in Safari (not this home screen icon), sign in there once, then come back here — iOS sometimes needs that first handshake done in the browser.'
-      : '';
-  }
-}
-function hideAuthGate(){
-  document.getElementById('authGate').classList.add('hidden');
-}
-function skipAuthGate(){
-  sessionStorage.setItem('careLedgerSkippedSignIn', '1');
-  hideAuthGate();
-}
-
-function signIn(){
-  if (!firebaseReady){
-    alert('Firebase isn\'t configured yet — add your Firebase project config near the top of the script.');
+function attachSync(){
+  if (unsubDoc) unsubDoc();
+  if (!firebaseReady || !syncCode){
+    updateStatusLine();
     return;
   }
-  showAuthGateError(null);
-  const provider = new firebase.auth.GoogleAuthProvider();
-  if (isMobileOrStandalone()){
-    // Popups don't work reliably on iOS Safari, and not at all in a
-    // home-screen-installed standalone app — use a full-page redirect instead.
-    auth.signInWithRedirect(provider).catch(err => {
-      console.error(err);
-      showAuthGateError(err);
-      updateStatusLine('sign-in failed — try again');
-    });
-  } else {
-    auth.signInWithPopup(provider).catch(err => {
-      console.error(err);
-      showAuthGateError(err);
-      updateStatusLine('sign-in failed — try again');
-    });
-  }
-}
-
-function signOut(){
-  if (auth) auth.signOut();
-  closeAccountModal();
-}
-
-function handleAuthBadgeClick(){
-  if (isSignedIn){
-    openAccountModal();
-  } else {
-    showAuthGate();
-  }
-}
-
-function openAccountModal(){
-  document.getElementById('accountModalEmail').textContent = currentUser ? 'Signed in as ' + currentUser.email : 'Signed in';
-  document.getElementById('accountModalBg').classList.add('open');
-}
-function closeAccountModal(){
-  document.getElementById('accountModalBg').classList.remove('open');
-}
-
-if (firebaseReady){
-  // Show the sign-in prompt immediately, before we even know the auth state,
-  // unless the user chose "Skip for now" earlier this session.
-  if (sessionStorage.getItem('careLedgerSkippedSignIn') !== '1'){
-    showAuthGate();
-  }
-
-  auth.getRedirectResult().catch(err => {
-    console.error('Redirect sign-in error', err);
-    showAuthGateError(err);
-    updateStatusLine('sign-in failed — try again');
-  });
-
-  auth.onAuthStateChanged(user => {
-    if (unsubDoc){ unsubDoc(); unsubDoc = null; }
-    if (user){
-      currentUser = user;
-      isSignedIn = true;
-      hideAuthGate();
-      attachUserDoc(user.uid);
-    } else {
-      currentUser = null;
-      isSignedIn = false;
-      updateStatusLine();
-      if (sessionStorage.getItem('careLedgerSkippedSignIn') !== '1'){
-        showAuthGate();
-      }
-    }
-  });
-} else {
-  document.addEventListener('DOMContentLoaded', () => {
-    const gate = document.getElementById('authGate');
-    if (gate) gate.classList.add('hidden');
-  });
-}
-
-// ---------- Storage: Firestore, keyed by the signed-in user's uid ----------
-function attachUserDoc(userId){
-  updateStatusLine('syncing…');
-  const ref = db.collection('careLedgerUsers').doc(userId);
+  updateStatusLine('connecting...');
+  const ref = docRef();
   ref.get().then(snap => {
     if (!snap.exists){
       ref.set({ procedures, medications, updatedAt: Date.now() });
@@ -601,20 +457,18 @@ function attachUserDoc(userId){
       medications = data.medications || [];
       saveLocal();
       renderAll();
+      updateStatusLine('synced');
     }
-    updateStatusLine();
   }, err => {
     console.error(err);
     updateStatusLine('sync error — check Firestore rules');
   });
 }
 
-// Called after every add/edit/delete/toggle
 function pushRemote(){
   saveLocal();
-  if (isSignedIn && currentUser){
-    db.collection('careLedgerUsers').doc(currentUser.uid)
-      .set({ procedures, medications, updatedAt: Date.now() })
+  if (firebaseReady && syncCode){
+    docRef().set({ procedures, medications, updatedAt: Date.now() })
       .catch(err => { console.error(err); updateStatusLine('sync error'); });
   }
 }
@@ -622,13 +476,28 @@ function pushRemote(){
 function updateStatusLine(msg){
   const badge = document.getElementById('syncBadge');
   const line = document.getElementById('statusLine');
-  if (isSignedIn && currentUser){
-    badge.textContent = '✓ ' + currentUser.email;
-    line.textContent = msg || ('Synced with Google · ' + currentUser.email);
+  if (syncCode){
+    badge.textContent = 'code: ' + syncCode;
+    line.textContent = msg || (firebaseReady ? 'synced via "' + syncCode + '"' : 'sync unavailable — local only');
   } else {
-    badge.textContent = 'Sign in with Google';
-    line.textContent = msg || 'Not signed in — saving to this device only';
+    badge.textContent = 'no sync code';
+    line.textContent = 'Not synced — saving to this device only';
   }
+}
+
+function openSyncModal(){
+  document.getElementById('syncCodeInput').value = syncCode;
+  document.getElementById('syncModalBg').classList.add('open');
+}
+function closeSyncModal(){
+  document.getElementById('syncModalBg').classList.remove('open');
+}
+function applySyncCode(){
+  const val = document.getElementById('syncCodeInput').value.trim();
+  syncCode = val;
+  localStorage.setItem('careLedgerSyncCode', syncCode);
+  closeSyncModal();
+  attachSync();
 }
 
 // ---------- Tabs ----------
@@ -919,6 +788,7 @@ function printLedger(){
 loadLocal();
 renderAll();
 updateStatusLine();
+if (syncCode) attachSync();
 
 document.getElementById('procDate').valueAsDate = new Date();
 updateIntervalVisibility();
