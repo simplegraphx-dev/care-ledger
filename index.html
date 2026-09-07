@@ -77,6 +77,17 @@ try {
   if (saved === 'care') showApp('care');
 } catch(e){}
 
+// Arriving here via Care Ledger's standalone-mode print workaround: select
+// the Care tab and tell that iframe to auto-print once it (re)loads.
+const params = new URLSearchParams(location.search);
+if (params.get('tab') === 'care'){
+  showApp('care');
+}
+if (params.get('autoprint') === '1'){
+  const careFrame = document.getElementById('frameCare');
+  if (careFrame) careFrame.src = 'care.html?autoprint=1';
+}
+
 // Care Ledger's Print button can't reliably call print() on itself from inside
 // this iframe on iOS Safari — it asks the shell (this top-level page) to do it.
 window.addEventListener('message', (event) => {

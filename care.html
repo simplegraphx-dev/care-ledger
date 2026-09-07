@@ -971,7 +971,16 @@ function printLedger(){
     // one and let it auto-print once it loads.
     if (window.navigator.standalone === true){
       log('standalone mode — opening in Safari to print…');
-      window.open(location.pathname + '?autoprint=1', '_blank');
+      const embedded = window.parent && window.parent !== window;
+      if (embedded){
+        // Embedded in the combined Health Ledger shell — reopen the shell
+        // itself (with Care selected) so Vitals is still reachable afterward,
+        // instead of stranding the user on this bare file with no way back.
+        const dir = location.pathname.replace(/[^/]*$/, '');
+        window.open(dir + 'index.html?tab=care&autoprint=1', '_blank');
+      } else {
+        window.open(location.pathname + '?autoprint=1', '_blank');
+      }
       return;
     }
 
