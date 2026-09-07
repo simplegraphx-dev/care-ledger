@@ -965,6 +965,16 @@ function printLedger(){
   const log = (msg) => { if (debug) debug.textContent = msg; };
 
   try {
+    // iOS doesn't support window.print() at all when running as an installed
+    // home-screen app (standalone mode) — not a bug we can code around from
+    // inside that mode. The only way to print is a real Safari tab, so open
+    // one and let it auto-print once it loads.
+    if (window.navigator.standalone === true){
+      log('standalone mode — opening in Safari to print…');
+      window.open(location.pathname + '?autoprint=1', '_blank');
+      return;
+    }
+
     log('print tapped…');
     document.getElementById('printDate').textContent =
       'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
@@ -1010,6 +1020,19 @@ if (syncCode) attachSync();
 
 document.getElementById('procDate').valueAsDate = new Date();
 updateIntervalVisibility();
+
+// If this page was opened specifically to print (see the standalone-mode
+// fallback above), wait for data to sync in, then trigger the print dialog.
+if (new URLSearchParams(location.search).get('autoprint') === '1'){
+  const doAutoPrint = () => {
+    document.getElementById('printDate').textContent =
+      'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
+    window.print();
+  };
+  // Give Firestore a moment to load synced data before printing, but don't
+  // wait forever if there's no sync code or the network is slow.
+  setTimeout(doAutoPrint, syncCode ? 1200 : 300);
+}
 </script>
 </body>
 </html>
