@@ -962,6 +962,12 @@ function exportExcel(){
 function printLedger(){
   document.getElementById('printDate').textContent =
     'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
+  // When embedded in an iframe (e.g. inside the combined Health Ledger shell),
+  // window.print() silently does nothing unless this frame actually has focus.
+  try {
+    if (window.top && window.top !== window) window.top.focus();
+  } catch(e){}
+  window.focus();
   window.print();
 }
 
