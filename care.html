@@ -285,6 +285,7 @@
     <button onclick="exportExcel()">⬇ Export to Excel</button>
     <button onclick="printLedger()">🖨 Print</button>
   </div>
+  <div class="no-print" id="printDebug" style="font-size:11px;color:var(--ink-faint);text-align:center;margin:-8px 0 14px;font-family:'JetBrains Mono',monospace;word-break:break-word;"></div>
 
   <div class="tabs no-print">
     <div class="tab active" data-tab="procedures" onclick="switchTab('procedures')">Procedures</div>
@@ -960,31 +961,43 @@ function exportExcel(){
 }
 
 function printLedger(){
-  document.getElementById('printDate').textContent =
-    'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
+  const debug = document.getElementById('printDebug');
+  const log = (msg) => { if (debug) debug.textContent = msg; };
 
-  if (window.parent && window.parent !== window){
-    // iOS Safari blocks print() from firing inside a nested iframe, even with
-    // focus — so ask the top-level shell to trigger it instead. If the shell
-    // doesn't answer quickly (e.g. this file was opened outside that shell,
-    // or something else ate the message), fall back to printing directly.
-    let acked = false;
-    const onAck = (event) => {
-      if (event.data && event.data.type === 'careLedgerPrintAck'){
-        acked = true;
-        window.removeEventListener('message', onAck);
-      }
-    };
-    window.addEventListener('message', onAck);
-    window.parent.postMessage({ type: 'careLedgerPrint' }, '*');
-    setTimeout(() => {
-      if (!acked){
-        window.removeEventListener('message', onAck);
-        window.print();
-      }
-    }, 400);
-  } else {
-    window.print();
+  try {
+    log('print tapped…');
+    document.getElementById('printDate').textContent =
+      'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
+
+    const embedded = window.parent && window.parent !== window;
+    log(embedded ? 'embedded=yes, messaging parent…' : 'embedded=no, calling print() directly…');
+
+    if (embedded){
+      let acked = false;
+      const onAck = (event) => {
+        if (event.data && event.data.type === 'careLedgerPrintAck'){
+          acked = true;
+          log('ack received from shell');
+          window.removeEventListener('message', onAck);
+        }
+      };
+      window.addEventListener('message', onAck);
+      window.parent.postMessage({ type: 'careLedgerPrint' }, '*');
+      log('message sent, waiting for ack…');
+      setTimeout(() => {
+        if (!acked){
+          window.removeEventListener('message', onAck);
+          log('no ack after 400ms — calling print() directly as fallback');
+          window.print();
+        }
+      }, 400);
+    } else {
+      window.print();
+      log('print() called directly');
+    }
+  } catch(err){
+    log('ERROR: ' + (err && err.message ? err.message : err));
+    console.error(err);
   }
 }
 
