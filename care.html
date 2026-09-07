@@ -962,10 +962,27 @@ function exportExcel(){
 function printLedger(){
   document.getElementById('printDate').textContent =
     'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
+
   if (window.parent && window.parent !== window){
     // iOS Safari blocks print() from firing inside a nested iframe, even with
-    // focus — so hand it off to the top-level shell page to trigger instead.
+    // focus — so ask the top-level shell to trigger it instead. If the shell
+    // doesn't answer quickly (e.g. this file was opened outside that shell,
+    // or something else ate the message), fall back to printing directly.
+    let acked = false;
+    const onAck = (event) => {
+      if (event.data && event.data.type === 'careLedgerPrintAck'){
+        acked = true;
+        window.removeEventListener('message', onAck);
+      }
+    };
+    window.addEventListener('message', onAck);
     window.parent.postMessage({ type: 'careLedgerPrint' }, '*');
+    setTimeout(() => {
+      if (!acked){
+        window.removeEventListener('message', onAck);
+        window.print();
+      }
+    }, 400);
   } else {
     window.print();
   }

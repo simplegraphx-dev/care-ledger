@@ -85,6 +85,7 @@ window.addEventListener('message', (event) => {
     if (frame && frame.contentWindow){
       frame.contentWindow.focus();
       frame.contentWindow.print();
+      if (event.source) event.source.postMessage({ type: 'careLedgerPrintAck' }, '*');
     }
   }
 });
