@@ -962,13 +962,13 @@ function exportExcel(){
 function printLedger(){
   document.getElementById('printDate').textContent =
     'Printed ' + new Date().toLocaleDateString(undefined, { year:'numeric', month:'long', day:'numeric' });
-  // When embedded in an iframe (e.g. inside the combined Health Ledger shell),
-  // window.print() silently does nothing unless this frame actually has focus.
-  try {
-    if (window.top && window.top !== window) window.top.focus();
-  } catch(e){}
-  window.focus();
-  window.print();
+  if (window.parent && window.parent !== window){
+    // iOS Safari blocks print() from firing inside a nested iframe, even with
+    // focus — so hand it off to the top-level shell page to trigger instead.
+    window.parent.postMessage({ type: 'careLedgerPrint' }, '*');
+  } else {
+    window.print();
+  }
 }
 
 // ---------- Init ----------

@@ -76,6 +76,18 @@ try {
   const saved = sessionStorage.getItem('healthLedgerTab');
   if (saved === 'care') showApp('care');
 } catch(e){}
+
+// Care Ledger's Print button can't reliably call print() on itself from inside
+// this iframe on iOS Safari — it asks the shell (this top-level page) to do it.
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'careLedgerPrint'){
+    const frame = document.getElementById('frameCare');
+    if (frame && frame.contentWindow){
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    }
+  }
+});
 </script>
 
 </body>
